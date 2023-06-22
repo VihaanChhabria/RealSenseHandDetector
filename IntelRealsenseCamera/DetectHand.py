@@ -5,24 +5,47 @@ import imutils
 import pyrealsense2 as rs
 import numpy as np
 
+import threading
+import queue
+
 class HandDetection:
     mpHands = mp.solutions.hands # MP hand solution
     hands = mpHands.Hands()
     mpDraw = mp.solutions.drawing_utils # Draws the lines of hand joints
     
-    def __init__(self, _colorImage, _depthColormap):
-        self.colorImage = _colorImage
-        self.depthColorMap = _depthColormap
+    def __init__(self):
+        self.colorImage = None
+        self.depthColorMap = None
         self.results = None
 
+    def RunHandDetection(self, frameSupplier):
+
+        while True:
+            self.images = frameSupplier.get()
+            self.colorImage = self.images[0]
+            self.depthColorMap = self.images[1]
+
+            self.ProcessImage()
+            self.DrawHandConnections()
+
+            self.images = np.hstack((self.colorImage, self.depthColorMap))
+            
+            # Displaying the output
+            cv2.imshow("Hand tracker", self.images)
+
+            # Program terminates when q key is pressed
+            if cv2.waitKey(1) == ord('q'):
+                self.pipeline.stop()
+                cv2.destroyAllWindows()
+
     # Processing the input image
-    def process_image(self):
+    def ProcessImage(self):
         # Converting the input to grayscale
         gray_image = cv2.cvtColor(self.colorImage, cv2.COLOR_BGR2RGB)
         self.results = HandDetection.hands.process(gray_image)
 
     # Drawing landmark connections
-    def draw_hand_connections(self):
+    def DrawHandConnections(self):
         
         if self.results.multi_hand_landmarks:
             for handLms in self.results.multi_hand_landmarks:
@@ -48,84 +71,75 @@ class HandDetection:
             #pointer_finger = self.results.multi_hand_landmarks[0].landmark[8]
             #middle_finger = self.results.multi_hand_landmarks[0].landmark[2]
             #return [min(int(pointer_finger.x* w), 639), min(int(pointer_finger.y* h), 479)], [min(int(middle_finger.x* w), 639), min(int(middle_finger.y* h), 479)]
+
+class Camera_Feed:
+
+    def __init__(self):
+        self.pipeline = None
+        self.frames = None
+        self.alignFunction = None
+        self.alignedFrames = None
+
+        self.depthFrame = None
+        self.depthData = None
         
+        self.depthColorMap = None
+        self.depthColorMapDim = (0, 0, 0)
+
+        self.colorFrame = None
+        self.colorImage = None
+
+    def GetCameraFeed(self, frameSupplier):
+        self._ReadyRealsense()
+    
+        while True:
+            self.frames = self.pipeline.wait_for_frames()
+            self.alignFunction = rs.align(rs.stream.color)
+            self.alignedFrames = self.alignFunction.process(self.frames)
+
+            self.depthFrame = self.alignedFrames.get_depth_frame()
+            self.depthData = np.asanyarray(self.depthFrame.get_data())
+            self.depthColorMap = cv2.applyColorMap(cv2.convertScaleAbs(self.depthData, alpha=0.03), cv2.COLORMAP_JET)
+            self.depthColorMapDim = self.depthColorMap.shape
+
+            self.colorFrame = self.alignedFrames.get_color_frame()
+            self.colorImage = np.asanyarray(self.colorFrame.get_data())
+            self.colorImage = cv2.resize(self.colorImage, dsize=(self.depthColorMapDim[1], self.depthColorMapDim[0]), interpolation=cv2.INTER_AREA)
+
+
+            if (not self.colorFrame) or (not self.depthFrame):
+                continue
+
+            frameSupplier.put((self.colorImage, self.depthColorMap))
+
+
+    def _ReadyRealsense(self):
+        # Configure depth and color streams
+        self.pipeline = rs.pipeline()
+        self.config = rs.config()
+
+        self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+        self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+
+        # Start streaming
+        self.pipeline.start(self.config)
+
 def main():
 
-    pipeline = ready_realsense()
-    stable_point_found = 0
+    cameraFeedProcess = Camera_Feed()
+    handDetectionProcess = HandDetection()
 
-    while True:
-        frames = pipeline.wait_for_frames()
-        align = rs.align(rs.stream.color)
-        aligned_frames = align.process(frames)
+    frameSupplier = queue.Queue()
 
-        depth_frame = aligned_frames.get_depth_frame()
-        depth_image = np.asanyarray(depth_frame.get_data())
-        depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
-        depth_colormap_dim = depth_colormap.shape
+    #cameraFeedProcess.GetCameraFeed(frameSupplier)
+    #handDetectionProcess.RunHandDetection(frameSupplier)
 
-        color_frame = aligned_frames.get_color_frame()
-        color_image = np.asanyarray(color_frame.get_data())
-        color_image = cv2.resize(color_image, dsize=(depth_colormap_dim[1], depth_colormap_dim[0]), interpolation=cv2.INTER_AREA)
+    cameraThread = threading.Thread(target=cameraFeedProcess.GetCameraFeed, args = (frameSupplier, ))
+    handThread = threading.Thread(target=handDetectionProcess.RunHandDetection, args=(frameSupplier, ))
 
+    cameraThread.start()
+    handThread.start()
 
-        if (not color_frame) or (not depth_frame):
-            continue
-
-        handProcess = HandDetection(color_image, depth_colormap)
-
-        handProcess.process_image()
-
-        color_image, depth_colormap = handProcess.draw_hand_connections()
-
-        images = np.hstack((color_image, depth_colormap))
-
-        # Displaying the output
-        cv2.imshow("Hand tracker", images)
-
-        # Program terminates when q key is pressed
-        if cv2.waitKey(1) == ord('q'):
-            pipeline.stop()
-            cv2.destroyAllWindows()
-
-def click_mouse(depth_image, pointer_coord, middle_coord, depth_colormap_dim, stable_point):
-    if depth_image == [0, 0]:
-        return None
-    #pointer_depth = depth_image[pointer_coord[1], pointer_coord[0]]
-    #middle_depth = depth_image[middle_coord[1], middle_coord[0]]
-
-    #print("pointer_depth:", pointer_depth)
-    #print("middle_depth:", middle_depth)
-    #print(depth_image[0, 0])
-
-    #stable_point = depth_image[0, 0]
-
-    for y in range(depth_colormap_dim[1]):
-        for x in range(depth_colormap_dim[0]):
-            depth = 0
-            try:
-                depth = depth_image[y, x]
-            except:
-                continue
-            if depth-20 > stable_point:
-                cv2.circle(depth_image, (x, y), 5, (255, 255, 0), -1)
-                print(stable_point)
-                print(depth, x, y)
-                print("in")
-                return
-
-def ready_realsense():
-    # Configure depth and color streams
-    pipeline = rs.pipeline()
-    config = rs.config()
-
-    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-
-    # Start streaming
-    pipeline.start(config)
-
-    return pipeline
 
 if __name__ == "__main__":
     main()
