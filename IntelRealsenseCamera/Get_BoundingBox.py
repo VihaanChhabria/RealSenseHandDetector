@@ -9,7 +9,7 @@ def empty(var1):
     pass
 
 def getContours(img, colorImgContour):
-    triCoord, quadCoord = (0, 0), (0, 0)
+    triCoord, quadCoord, checkCoord= (0, 0), (0, 0), (0, 0)
 
     contours, hierarchy = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     
@@ -28,13 +28,15 @@ def getContours(img, colorImgContour):
                 triCoord = x, y
             elif approxSidesLen == 4:
                 quadCoord = x, y
+            elif approxSidesLen == 5:
+                checkCoord = x, y
 
             cv2.drawContours(colorImgContour, contours, -1, (255, 255, 0), 7)
             cv2.circle(colorImgContour, (x, y), 7, (255, 0, 255), -1)
 
-            print(approxSidesLen)
+            #print(approxSidesLen)
 
-    return triCoord, quadCoord
+    return triCoord, quadCoord, checkCoord
 
 def main():
 
@@ -78,7 +80,13 @@ def main():
         # Makes outlines bigger allowing for the shapes to be more apparent
         colorImg_Dil = cv2.dilate(colorImgCanny, kernel, 1)
 
-        getContours(colorImg_Dil, colorImgContour)
+        triCoord, quadCoord, checkCoord = getContours(colorImg_Dil, colorImgContour)
+
+        if (checkCoord[0] > triCoord[0] and checkCoord[0] < quadCoord[0] and checkCoord[1] > triCoord[1] and checkCoord[1] < quadCoord[1]):
+            print(True)
+
+        #print(triCoord)
+        #print(quadCoord)
 
         # Displaying the output
         cv2.imshow("Result", colorImgContour)

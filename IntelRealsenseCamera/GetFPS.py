@@ -74,8 +74,8 @@ def main():
         color_image = np.asanyarray(color_frame.get_data())
         color_image = cv2.resize(color_image, dsize=(depth_colormap_dim[1], depth_colormap_dim[0]), interpolation=cv2.INTER_AREA)
     
-        results = process_image(color_image)
-        draw_hand_connections(color_image, depth_colormap, results)
+        #results = process_image(color_image)
+        #draw_hand_connections(color_image, depth_colormap, results)
 
         new_frame_time = time.time()
 
@@ -85,19 +85,19 @@ def main():
 
         avg_fps_num = 0
 
-        for fps_past in avg_fps:
-            avg_fps_num = fps_past + avg_fps_num
+        #for fps_past in avg_fps:
+        #    avg_fps_num = fps_past + avg_fps_num
 
-        avg_fps_num = avg_fps_num/len(avg_fps)
+        #avg_fps_num = avg_fps_num/len(avg_fps)
 
         cv2.putText(color_image, str(int(avg_fps_num)), (7, 70), cv2.FONT_HERSHEY_SIMPLEX, 3, (100, 255, 0), 3, cv2.LINE_AA)
 
         print(fps)
 
-        images = np.hstack((color_image, depth_colormap))
+        #images = np.hstack((color_image, depth_colormap))
 
         # Displaying the output
-        cv2.imshow("Hand tracker", images)
+        #cv2.imshow("Hand tracker", images)
 
         # Program terminates when q key is pressed
         if cv2.waitKey(1) == ord('q'):
